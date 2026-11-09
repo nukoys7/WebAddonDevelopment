@@ -1,6 +1,6 @@
 chrome.runtime.onMessage.addListener((message) => {
   if (message.action === "openViewer") {
-    const viewerUrl = chrome.runtime.getURL("viewer.html");
+    const viewerUrl = new URL(chrome.runtime.getURL("viewer.html"));
 
     viewerUrl.searchParams.set("url", message.fileUrl);
 

@@ -52,7 +52,9 @@ document.addEventListener("click",(event)=> {
 
     event.preventDefault();
 
-    const viewerUrl = chrome.runtime.getURL("viewer.html");
+    console.log("プレビュー対象を検出しました");
+
+    //const viewerUrl = chrome.runtime.getURL("viewer.html");
 
     chrome.runtime.sendMessage({
         action: "openViewer",
@@ -60,7 +62,7 @@ document.addEventListener("click",(event)=> {
         fileUrl: fileUrl.href
     });
 
-    console.log("プレビュー画面", viewerUrl.href);
+    //console.log("プレビュー画面", viewerUrl.href);
 
     // window.open(viewerUrl.href, "_blank");
 },true);
