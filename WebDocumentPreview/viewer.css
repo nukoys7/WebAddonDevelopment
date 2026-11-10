@@ -4,12 +4,23 @@
 
 body{
     margin: 0;
-    font-family: "Yu Gothic UI", sans-serif;
-    background: #e9edf2;
-    color: #222;
+    font-family: sans-serif;
+    background: #f0f0f0;
+    /* color: #222; */
 }
 
-.toolbar{
+header {
+    padding: 15px 25px;
+    background: white;
+    border-bottom: 1px solid #ddd;
+}
+
+header h1 {
+    margin: 0 0 8px;
+    font-size: 24px;
+}
+
+/* .toolbar{
     position: sticky;
     top: 0;
     display: flex;
@@ -23,18 +34,32 @@ body{
 .toolbar h1{
     margin: 0;
     font-size: 18px;
-}
+} */
 
 #status{
+    margin: 0;
     color: #555;
-    font-size: 13px;
+    /* font-size: 13px; */
 }
 
-#preview{
+main {
+    padding: 25px;
+}
+
+#documentFrame{
+    display: block;
+    width: 100%;
+    height: calc(100vh - 140px);
+    border: none;
+    background: #fff;
+    /*box-shadow: 0 2px 10px #00000012;*/
+}
+
+/* #preview{
     width: min(900px, calc(100% - 32px));
     min-height: 800px;
     margin: 24px auto;
     padding: 40px;
     background: #fff;
     box-shadow: 0 2px 10px #00000012;
-}
+} */
