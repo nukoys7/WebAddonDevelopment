@@ -1,6 +1,12 @@
 //const statusElement = document.getElementById('status');
 //const previewElement = document.getElementById('preview');
 console.log("viewer started");
+console.log("Viewer started");
+
+console.log(
+    "Mammoth.js読み込み確認:",
+    typeof mammoth
+);
 
 const params = new URLSearchParams(window.location.search);
 const fileUrl = params.get('url');
@@ -26,8 +32,10 @@ async function loadFile(){
             throw new Error('ファイルの取得に失敗しました: ' + response.status);
         }
 
-        const contentType =
-            response.headers.get("content-type") || "";
+        const contentType = (
+            response.headers.get("content-type") || ""
+        ).split(",")[0].trim().toLowerCase();
+            
 
         const finalUrl = new URL(response.url);
 
@@ -35,25 +43,78 @@ async function loadFile(){
 
         const isDocx =
             filename.toLowerCase().endsWith(".docx") ||
-            contentType.includes("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+            contentType === 
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
-        if(isDocx){
-            throw new Error(
-                `このファイル形式にはまだ対応していません。\nファイル名: ${filename}\n形式: ${contentType}`
-            )
-        }
+        const isDoc = 
+            filename.toLowerCase().endsWith(".doc") || 
+            contentType === "application/msword";
 
-        status.textContent = "Word文書を変換しています...";
+        console.log("取得ファイル名:", filename);
+        console.log("取得MIMEタイプ:", contentType);
+        console.log("DOCX判定:", isDocx);
+        console.log("DOC判定:", isDoc);
 
         const arrayBuffer = await response.arrayBuffer();
 
-        const result = await mammoth.convertToHtml({
-            arrayBuffer: arrayBuffer
-        });
+        let html;
 
-        console.log("変換時の警告:", result.messages);
+        if(isDocx){
 
-        const html = `
+            if(typeof mammoth === "undifined"){
+                throw new Error("Mammoth.jsが読み込まれていません");
+            }
+
+            status.textContent = "DOCXを変換しています...";
+
+            const result = await mammoth.convertToHtml({
+                arrayBuffer: arrayBuffer
+            });
+
+            console.log("変換時の警告:", result.messages);
+
+            html = result.value;
+
+        } else if(isDoc){
+
+            if(typeof docToText === "undifined"){
+                throw new Error("JSDocが読み込まれていません");
+            }
+
+            status.textContent = "DOCを変換しています...";
+
+            const text = docToText(arrayBuffer);
+
+            if(text === null){
+                throw new Error( "このDOCファイルは解析できませんでした。");
+            }
+
+            const escapedText = text
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;");
+
+            html = `
+                <div style="
+                    white-space: pre-wrap;
+                    font-family: sans-serif;
+                    line-height: 1.8;
+                    overflow-wrap: anywhere;
+                ">${escapedText}</div>
+            `;
+
+        } else {
+
+            throw new Error(
+                 `未対応のファイル形式です。\nファイル名: ${filename}\n形式: ${contentType}`
+            );
+        }
+
+        
+
+        //console.log("変換時の警告:", result.messages);
+
+        const previewHtml = `
             <!DOCTYPE html>
             <html lang="ja">
             <head>
@@ -86,12 +147,12 @@ async function loadFile(){
                 </style>
             </head>
             <body>
-                ${result.value}
+                ${html}
             </body>
             </html>
         `;
 
-        documentFrame.srcdoc = html;
+        documentFrame.srcdoc = previewHtml;
 
         status.textContent =
             `表示完了: ${filename}`;
