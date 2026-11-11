@@ -55,6 +55,47 @@ main {
     /*box-shadow: 0 2px 10px #00000012;*/
 }
 
+#pptxPreview .slide {
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    min-height: 400px;
+    margin: 0 auto 30px;
+    padding: 35px;
+    overflow: auto;
+
+    background: white;
+    border: 1px solid #ddd;
+    box-shadow: 0 2px 10px #00000015;
+
+    font-family: sans-serif;
+    line-height: 1.6;
+}
+
+#pptxPreview .slide h2 {
+    margin-top: 0;
+    font-size: 15px;
+    color: #777;
+}
+
+#pptxPreview .slide-content {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+#pptxPreview .slide-images {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 15px;
+    margin-top: 20px;
+}
+
+#pptxPreview .slide-images img {
+    max-width: 100%;
+    max-height: 450px;
+    object-fit: contain;
+}
+
 /* #preview{
     width: min(900px, calc(100% - 32px));
     min-height: 800px;
