@@ -7,14 +7,218 @@ console.log(
     "Mammoth.js読み込み確認:",
     typeof mammoth
 );
+console.log("JSZip", typeof JSZip);
 
 const params = new URLSearchParams(window.location.search);
 const fileUrl = params.get('url');
 
 const status = document.getElementById('status');
 const documentFrame = document.getElementById('documentFrame');
+const pptxPreview = document.getElementById("pptxPreview");
 // 
 // document.body.appendChild(status);
+
+const DRAWING_NS = 
+    "http://schemas.openxmlformats.org/drawingml/2006/main";
+
+const PRESENTATION_NS =
+    "http://schemas.openxmlformats.org/presentationml/2006/main";
+
+const REL_NS =
+    "http://schemas.openxmlformats.org/package/2006/relationships";
+
+const OFFICE_REL_NS = 
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+
+function parseXml(xml){
+    const parser = new DOMParser();
+    const result = parser.parseFromString(xml, "application/xml");
+
+    if(result.querySelector("parsererror")){
+        throw new Error("XML解析に失敗しました");
+    }
+
+    return result;
+}
+
+function resolvePath(baseDir, target){
+    const url = new URL(
+        target,
+        "https://ppax.local/" + baseDir
+    );
+
+    return url.pathname.replace(/^\/+/, "");
+}
+
+async function getRelationships(zip, path, baseDir) {
+    const file = zip.file(path);//現在ここ
+
+    if(!file){
+        return {};
+    }
+
+    const xml = await file.async("string");
+    const doc = parseXml(xml);
+
+    const relationships = {};
+
+    const elements = doc.getElementsByTagNameNS(
+        REL_NS,
+        "Relationship"
+    );
+
+    for(const element of elements){
+        const id = element.getAttribute("Id");
+        const target = element.getAttribute("Target");
+        const mode = element.getAttribute("TargetMode");
+
+        if(mode === "External"){
+            continue;
+        }
+
+        relationships[id] = resolvePath(baseDir, target);
+    }
+
+    return relationships;
+}
+
+async function getSlideImages(zip, slidePath) {
+    const slideName = slidePath.split("/").pop();
+
+    const relPath =
+        "ppt/slides/_rels" + slideName + ".rels";
+
+    const relationships = await getRelationships(
+        zip,
+        relPath,
+        "ppt/slides/"
+    );
+
+    const slideFile = await zip.file(slidePath).async("string");
+    const slidexml = parseXml(slideFile);
+
+    const pictures = slidexml.getElementsByTagNameNS(
+        PRESENTATION_NS,
+        "pic"
+    );
+
+    const images = [];
+
+    for(const picture of pictures){
+        const blips = picture.getElementsByTagNameNS(
+            DRAWING_NS,
+            "blip"
+        );
+
+        if(blips.length === 0){
+            continue;
+        }
+
+        const relationshipId = blips[0].getAttributeNS(
+            OFFICE_REL_NS,
+            "embed"
+        );
+
+        const imagePath = relationships[relationshipId];
+
+        if(!imagePath){
+            continue;
+        }
+
+        const imageFile = zip.file(imagePath);
+
+        if(!imageFile){
+            continue;
+        }
+
+        const extension = imagePath.split(".").pop().toLowerCase();
+
+        const mimeTypes = {
+            png: "image/png",
+            jpg: "image/jpeg",
+            jpeg: "image/jpeg",
+            gif: "image/gif",
+            bmp: "image/bmp",
+            webp: "image/webp"
+        };
+
+        const mime = mimeTypes[extension];
+
+        if(!mime){
+            continue;
+        }
+
+        const base64 = await imageFile.async("base64");
+
+        images.push(
+            `data:${mime};base64,${base64}`
+        );
+    }
+
+    return images;
+}
+
+async function getSlideText(zip, slidePath){
+    const xml = await zip.file(slidePath).async("string");
+    const doc = parseXml(xml);
+
+    const paragraphs = doc.getElementsByTagNameNS(
+        DRAWING_NS,
+        "p"
+    );
+
+    const texts = [];
+
+    for(const paragraph of paragraphs){
+        const textElements = paragraph.getElementsByTagNameNS(
+            DRAWING_NS,
+            "t"
+        );
+
+        let text = "";
+
+        for(const element of textElements){
+            text += element.textContent;
+        }
+
+        if(text.trim()){
+            texts.push(text);
+        }
+    }
+
+    return texts;
+}
+
+async function convertPptx(arrayBuffer) {
+    const zip = await JSZip.loadAsync(arrayBuffer);
+
+    const presentationFile = await zip
+        .file("ppt/presentation.xml")
+        .async("string");
+    
+    const presentationXml = parseXml(presentationFile);
+
+    const presentationRels = await getRelationships(
+        zip,
+        "ppt/_rels/presentation.xml.rels",
+        "ppt/"
+    );
+
+    const slideIds = presentationXml.getElementsByTagNameNS(
+        PRESENTATION_NS,
+        "sldId"
+    );
+
+    const slides = [];
+
+    for(const slideId of slideIds){
+        const relationshipId = slideId.getAttributeNS(
+            OFFICE_REL_NS,
+            "id"
+        );//現在ここ
+    }
+    
+}
 
 async function loadFile(){
     try{
