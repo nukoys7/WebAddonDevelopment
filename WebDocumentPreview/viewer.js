@@ -215,9 +215,61 @@ async function convertPptx(arrayBuffer) {
         const relationshipId = slideId.getAttributeNS(
             OFFICE_REL_NS,
             "id"
-        );//現在ここ
+        );
+
+        const slidePath = presentationRels[relationshipId];
+
+        if(!slidePath || !zip.file(slidePath)){
+            continue;
+        }
+
+        const texts = await getSlideText(zip, slidePath);
+        const images = await getSlideImages(zip,slidePath);
+
+        slideId.push({
+            texts,
+            images
+        });
     }
-    
+
+    return slides;
+}
+
+function displaySlides(slides){
+    documentFrame.hidden = true;
+    pptxPreview.hidden = false;
+
+    pptxPreview.replaceChildren();
+
+    slides.forEach((slide, index) => {
+        const slideElement = document.createElement("section");
+        slideElement.className = "slide";
+
+        const title = document.createElement("h2");
+        title.textContent = `スライド ${index + 1}`;
+
+        slideElement.appendChild(title);
+
+        const content = document.createElement("div");
+        content.className = "slide-content";
+        content.textContent = slide.texts.join("\n");
+
+        slideElement.appendChild(content);
+
+        const imageContainer = document.createElement("div");
+        imageContainer.className = "slide-images";
+
+        for(const imageUrl of slide.images){
+            const image = document.createElement("img");
+            image.src = imageUrl;
+            image.alt = "スライド内の画像";
+
+            imageContainer.appendChild(image);
+        }
+
+        slideElement.appendChile(imageContainer);;
+        pptxPreview.appendChild(slideElement);
+    });
 }
 
 async function loadFile(){
