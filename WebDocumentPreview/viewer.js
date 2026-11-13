@@ -82,6 +82,113 @@ async function getRelationships(zip, path, baseDir) {
     return relationships;
 }
 
+function firstDescendendantNS(element, namespace, localName){
+    return element.getElementsByTagNameNS(
+        namespace,
+        localName
+    )[0] || null;
+}
+
+function getPlaceholderKey(shape){
+    const placeholder = firstDescendendantNS(
+        shape,
+        PRESENTATION_NS,
+        "ph"
+    );
+
+    if(!placeholder) return null;
+
+    const type = placeholder.getAttribute("type") || "obj";
+    const index = placeholder.getAttribute("idx") || "0";
+
+    return `${type}:$index`;
+}
+
+function getShapeTransform(shape){
+    const shapeProperties = firstDescendendantNS(
+        shpe,
+        PRESENTATION_NS,
+        "spPr"
+    ) || firstDescendendantNS(
+        shape,
+        PRESENTATION_NS,
+        "grpSpPr"
+    );
+
+    if(!shapeProperties) return null;
+
+    const transform = firstDescendendantNS(
+        shapeProperties,
+        DRAWING_NS,
+        "xfrm"
+    );
+
+    if(!transform) return null;
+
+    const offset = firstDescendendantNS(
+        transform,
+        DRAWING_NS,
+        "off"
+    );
+
+    const extent = firstDescendendantNS(
+        transform,
+        DRAWING_NS,
+        "ext"
+    );
+
+    if(!offset || !extent) return null;
+
+    return {
+        x: Number(offset.getAttribute("x") || 0),
+        y: Number(offset.getAttribute("y") || 0),
+        cx: Number(offset.getAttribute("cx") || 0),
+        cy: Number(offset.getAttribute("cy") || 0)
+    };
+}
+
+async function getLayoutPlaceholderTransforms(zip, slidePath){
+    const slideName = slidePath.split("/").pop();
+
+    const relPath =
+    "ppt/slides/_rels/" + slideName + ".rels";
+
+    const relationships = await getRelationships(
+        zip,
+        relPath,
+        "ppt/slides/"
+    );
+
+    const layoutPath = Object.values(relationships).find(path =>
+        path.includes("slideLayouts/")
+    );
+
+    if(!layoutPath || !zip.file(layoutPath)){
+        return {};
+    }
+
+    const layoutXml = await zip.file(layoutPath).async("string");
+    const layoutDoc = parseXml(layoutXml);
+
+    const shapes = layoutDoc.getElementsByTagNameNS(
+        PRESENTATION_NS,
+        "sp"
+    );
+
+    const transform = {};
+
+    for(const shape of shapes){
+        const key = getPlaceholderKey(shape);
+        const transform = getShapeTransform(shape);
+
+        if(key && transform){
+            Transforms[key] = transform;
+        }
+    }
+
+    return transforms;
+}
+
 async function getSlideImages(zip, slidePath) {
     const slideName = slidePath.split("/").pop();
 
