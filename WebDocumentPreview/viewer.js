@@ -86,7 +86,7 @@ async function getSlideImages(zip, slidePath) {
     const slideName = slidePath.split("/").pop();
 
     const relPath =
-        "ppt/slides/_rels" + slideName + ".rels";
+        "ppt/slides/_rels/" + slideName + ".rels";
 
     const relationships = await getRelationships(
         zip,
@@ -226,7 +226,7 @@ async function convertPptx(arrayBuffer) {
         const texts = await getSlideText(zip, slidePath);
         const images = await getSlideImages(zip,slidePath);
 
-        slideId.push({
+        slides.push({
             texts,
             images
         });
@@ -267,7 +267,7 @@ function displaySlides(slides){
             imageContainer.appendChild(image);
         }
 
-        slideElement.appendChile(imageContainer);;
+        slideElement.appendChild(imageContainer);
         pptxPreview.appendChild(slideElement);
     });
 }
@@ -297,6 +297,8 @@ async function loadFile(){
 
         const filename = decodeURIComponent(finalUrl.pathname.split("/").pop());
 
+        const lowerFilename = filename.toLowerCase();
+
         const isDocx =
             filename.toLowerCase().endsWith(".docx") ||
             contentType === 
@@ -306,18 +308,43 @@ async function loadFile(){
             filename.toLowerCase().endsWith(".doc") || 
             contentType === "application/msword";
 
+        const isPptx = 
+            lowerFilename.endsWith(".pptx") ||
+            contentType ===
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+
         console.log("取得ファイル名:", filename);
         console.log("取得MIMEタイプ:", contentType);
         console.log("DOCX判定:", isDocx);
         console.log("DOC判定:", isDoc);
+        console.log("PPTX:", isPptx);
 
         const arrayBuffer = await response.arrayBuffer();
 
         let html;
 
-        if(isDocx){
+        if(isPptx){
+            if(typeof JSZip === "undefined"){
+                throw new Error("JSZipが読まれていません");
+            }
 
-            if(typeof mammoth === "undifined"){
+            status.textContent = "PowerPointを解析しています...";
+
+            const slides = await convertPptx(arrayBuffer);
+
+            if(slides.length === 0){
+                throw new Error("slide is missing...");
+            }
+
+            displaySlides(slides);
+
+            status.textContent = 
+                `表示完了: ${filename} (${slides.length}枚)`;
+
+            return;
+        } else if(isDocx){
+
+            if(typeof mammoth === "undefined"){
                 throw new Error("Mammoth.jsが読み込まれていません");
             }
 
@@ -333,7 +360,7 @@ async function loadFile(){
 
         } else if(isDoc){
 
-            if(typeof docToText === "undifined"){
+            if(typeof docToText === "undefined"){
                 throw new Error("JSDocが読み込まれていません");
             }
 
@@ -408,6 +435,8 @@ async function loadFile(){
             </html>
         `;
 
+        pptxPreview.hidden = true;
+        documentFrame.hidden = false;
         documentFrame.srcdoc = previewHtml;
 
         status.textContent =
