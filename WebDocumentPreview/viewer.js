@@ -1,7 +1,7 @@
 //const statusElement = document.getElementById('status');
 //const previewElement = document.getElementById('preview');
 console.log("viewer started");
-console.log("Viewer started");
+//console.log("Viewer started");
 
 console.log(
     "Mammoth.js読み込み確認:",
@@ -101,12 +101,12 @@ function getPlaceholderKey(shape){
     const type = placeholder.getAttribute("type") || "obj";
     const index = placeholder.getAttribute("idx") || "0";
 
-    return `${type}:$index`;
+    return `${type}:${index}`;
 }
 
 function getShapeTransform(shape){
     const shapeProperties = firstDescendendantNS(
-        shpe,
+        shape,
         PRESENTATION_NS,
         "spPr"
     ) || firstDescendendantNS(
@@ -142,8 +142,8 @@ function getShapeTransform(shape){
     return {
         x: Number(offset.getAttribute("x") || 0),
         y: Number(offset.getAttribute("y") || 0),
-        cx: Number(offset.getAttribute("cx") || 0),
-        cy: Number(offset.getAttribute("cy") || 0)
+        cx: Number(extent.getAttribute("cx") || 0),
+        cy: Number(extent.getAttribute("cy") || 0)
     };
 }
 
@@ -175,135 +175,368 @@ async function getLayoutPlaceholderTransforms(zip, slidePath){
         "sp"
     );
 
-    const transform = {};
+    const transforms = {};
 
     for(const shape of shapes){
         const key = getPlaceholderKey(shape);
-        const transform = getShapeTransform(shape);
+        const shapeTransform = getShapeTransform(shape);
 
-        if(key && transform){
-            Transforms[key] = transform;
+        if(key && shapeTransform){
+            transforms[key] = shapeTransform;
         }
     }
 
     return transforms;
 }
 
-async function getSlideImages(zip, slidePath) {
-    const slideName = slidePath.split("/").pop();
-
-    const relPath =
-        "ppt/slides/_rels/" + slideName + ".rels";
-
-    const relationships = await getRelationships(
-        zip,
-        relPath,
-        "ppt/slides/"
-    );
-
-    const slideFile = await zip.file(slidePath).async("string");
-    const slidexml = parseXml(slideFile);
-
-    const pictures = slidexml.getElementsByTagNameNS(
+function getShapeText(shape){
+    const textBody = firstDescendendantNS(
+        shape,
         PRESENTATION_NS,
-        "pic"
+        "txBody"
     );
 
-    const images = [];
+    if (!textBody) return "";
 
-    for(const picture of pictures){
-        const blips = picture.getElementsByTagNameNS(
-            DRAWING_NS,
-            "blip"
-        );
-
-        if(blips.length === 0){
-            continue;
-        }
-
-        const relationshipId = blips[0].getAttributeNS(
-            OFFICE_REL_NS,
-            "embed"
-        );
-
-        const imagePath = relationships[relationshipId];
-
-        if(!imagePath){
-            continue;
-        }
-
-        const imageFile = zip.file(imagePath);
-
-        if(!imageFile){
-            continue;
-        }
-
-        const extension = imagePath.split(".").pop().toLowerCase();
-
-        const mimeTypes = {
-            png: "image/png",
-            jpg: "image/jpeg",
-            jpeg: "image/jpeg",
-            gif: "image/gif",
-            bmp: "image/bmp",
-            webp: "image/webp"
-        };
-
-        const mime = mimeTypes[extension];
-
-        if(!mime){
-            continue;
-        }
-
-        const base64 = await imageFile.async("base64");
-
-        images.push(
-            `data:${mime};base64,${base64}`
-        );
-    }
-
-    return images;
-}
-
-async function getSlideText(zip, slidePath){
-    const xml = await zip.file(slidePath).async("string");
-    const doc = parseXml(xml);
-
-    const paragraphs = doc.getElementsByTagNameNS(
+    const paragraphs = textBody.getElementsByTagNameNS(
         DRAWING_NS,
         "p"
     );
 
-    const texts = [];
+    const lines = [];
 
-    for(const paragraph of paragraphs){
-        const textElements = paragraph.getElementsByTagNameNS(
+    for (const paragraph of paragraphs){
+        const runs = paragraph.getElementsByTagNameNS(
             DRAWING_NS,
             "t"
         );
 
-        let text = "";
+        let line = "";
 
-        for(const element of textElements){
-            text += element.textContent;
+        for (const run of runs){
+            line += run.textContent || "";
         }
 
-        if(text.trim()){
-            texts.push(text);
+        lines.push(line);
+    }
+
+    return lines.join("\n").trim();
+}
+
+function getShapeFontSize(shape){
+    const runProperties = shape.getElementsByTagNameNS(
+        DRAWING_NS,
+        "rPr"
+    );
+
+    if(runProperties.length > 0){
+        const size = Number(
+            runProperties[0].getAttribute("sz")
+        );
+
+        if(size > 0) return size / 100;
+    }
+
+    const endProperties = shape.getElementsByTagNameNS(
+        DRAWING_NS,
+        "endParaRPr"
+    );
+
+    if(endProperties.length > 0){
+        const size = Number(
+            endProperties[0].getAttribute("sz")
+        );
+
+        if(size > 0) return size / 100;
+    }
+
+    return 18;
+}
+
+function getShapeColor(shape){
+    const solidFill = firstDescendendantNS(
+        shape,
+        DRAWING_NS,
+        "srgbClr"
+    );
+
+    if(solidFill){
+        const value = solidFill.getAttribute("val");
+
+        if(/^[0-9a-f]{6}$/i.test(value)){
+            return `#${value}`;
         }
     }
 
-    return texts;
+    return "#222";
 }
+
+async function getSlideObjects(zip, slidePath){
+    const slideName = slidePath.split("/").pop();
+
+    const relationships = await getRelationships(
+        zip,
+        `ppt/slides/_rels/${slideName}.rels`,
+        "ppt/slides/"
+    );
+
+    const layoutTransforms = 
+        await getLayoutPlaceholderTransforms(
+            zip,
+            slidePath
+        );
+    
+    const slideXml = await zip.file(slidePath).async("string");
+    const slideDoc = parseXml(slideXml);
+
+    const shapeTree = firstDescendendantNS(
+        slideDoc,
+        PRESENTATION_NS,
+        "spTree"
+    );
+
+    if(!shapeTree) return [];
+
+    const objects = [];
+
+    for(const node of Array.from(shapeTree.children)){
+        const localName = node.localName;
+
+        if(localName !== "sp"  && localName !== "pic"){
+            continue;
+        }
+
+        let transform = getShapeTransform(node);
+
+        if(!transform){
+            const key = getPlaceholderKey(node);
+
+            if(key){
+                transform = layoutTransforms[key] || null;
+            }
+        }
+
+        if(!transform || !transform.cx || !transform.cy){
+            continue;
+        }
+
+        if(localName === "sp"){
+            const text = getShapeText(node);
+
+            if(!text) continue;
+
+            objects.push({
+                type: "text",
+                ...transform,
+                text,
+                fontSize: getShapeFontSize(node),
+                color: getShapeColor(node)
+            });
+        }
+
+        if(localName === "pic"){
+            const blip = firstDescendendantNS(
+                node,
+                DRAWING_NS,
+                "blip"
+            );
+
+            if(!blip) continue;
+
+            const relationshipId = blip.getAttributeNS(
+                OFFICE_REL_NS,
+                "embed"
+            );
+
+            const imagePath = relationships[relationshipId];
+
+            if(!imagePath) continue;
+
+            const imageFile = zip.file(imagePath);
+
+            if(!imageFile) continue;
+
+            const extension = imagePath
+                .split(".")
+                .pop()
+                .toLowerCase();
+
+            const mimeTypes = {
+                png: "image/png",
+                jpg: "image/jpeg",
+                jpeg: "image/jpeg",
+                gif: "image/gif",
+                bmp: "image/bmp",
+                webp: "image/webp",
+                svg: "image/svg+xml"
+            };
+
+            const mime = mimeTypes[extension];
+
+            if(!mime){
+                console.warn(
+                   "未対応の画像形式:",
+                    extension,
+                    imagePath  
+                );
+
+                continue;
+            }
+
+            const base64 = await imageFile.async("base64");
+
+            objects.push({
+                type: "image",
+                ...transform,
+                src: `data:${mime};base64,${base64}`
+            });
+        }
+    }
+
+    return objects;
+}
+
+// async function getSlideImages(zip, slidePath) {
+//     const slideName = slidePath.split("/").pop();
+
+//     const relPath =
+//         "ppt/slides/_rels/" + slideName + ".rels";
+
+//     const relationships = await getRelationships(
+//         zip,
+//         relPath,
+//         "ppt/slides/"
+//     );
+
+//     const slideFile = await zip.file(slidePath).async("string");
+//     const slidexml = parseXml(slideFile);
+
+//     const pictures = slidexml.getElementsByTagNameNS(
+//         PRESENTATION_NS,
+//         "pic"
+//     );
+
+//     const images = [];
+
+//     for(const picture of pictures){
+//         const blips = picture.getElementsByTagNameNS(
+//             DRAWING_NS,
+//             "blip"
+//         );
+
+//         if(blips.length === 0){
+//             continue;
+//         }
+
+//         const relationshipId = blips[0].getAttributeNS(
+//             OFFICE_REL_NS,
+//             "embed"
+//         );
+
+//         const imagePath = relationships[relationshipId];
+
+//         if(!imagePath){
+//             continue;
+//         }
+
+//         const imageFile = zip.file(imagePath);
+
+//         if(!imageFile){
+//             continue;
+//         }
+
+//         const extension = imagePath.split(".").pop().toLowerCase();
+
+//         const mimeTypes = {
+//             png: "image/png",
+//             jpg: "image/jpeg",
+//             jpeg: "image/jpeg",
+//             gif: "image/gif",
+//             bmp: "image/bmp",
+//             webp: "image/webp"
+//         };
+
+//         const mime = mimeTypes[extension];
+
+//         if(!mime){
+//             continue;
+//         }
+
+//         const base64 = await imageFile.async("base64");
+
+//         images.push(
+//             `data:${mime};base64,${base64}`
+//         );
+//     }
+
+//     return images;
+// }
+
+// async function getSlideText(zip, slidePath){
+//     const xml = await zip.file(slidePath).async("string");
+//     const doc = parseXml(xml);
+
+//     const paragraphs = doc.getElementsByTagNameNS(
+//         DRAWING_NS,
+//         "p"
+//     );
+
+//     const texts = [];
+
+//     for(const paragraph of paragraphs){
+//         const textElements = paragraph.getElementsByTagNameNS(
+//             DRAWING_NS,
+//             "t"
+//         );
+
+//         let text = "";
+
+//         for(const element of textElements){
+//             text += element.textContent;
+//         }
+
+//         if(text.trim()){
+//             texts.push(text);
+//         }
+//     }
+
+//     return texts;
+// }
 
 async function convertPptx(arrayBuffer) {
     const zip = await JSZip.loadAsync(arrayBuffer);
 
-    const presentationFile = await zip
-        .file("ppt/presentation.xml")
-        .async("string");
+    const presentationFile = zip.file(
+        "ppt/presentation.xml"
+    );
     
-    const presentationXml = parseXml(presentationFile);
+    if(!presentationFile){
+        throw new Error(
+            "Powerpointの構成ファイルが見つかりません"
+        );
+    }
+
+    const presentationXml =
+        await presentationFile.async("string");
+
+    const presentationDoc = parseXml(presentationXml);
+
+    const slideSize = firstDescendendantNS(
+        presentationDoc,
+        PRESENTATION_NS,
+        "sldSz"
+    );
+
+    if(!slideSize){
+        throw new Error(
+            "スライドサイズが取得できません"
+        );
+    }
+
+    const dimensions = {
+        width: Number(slideSize.getAttribute("cx")),
+        height: Number(slideSize.getAttribute("cy"))
+    };
 
     const presentationRels = await getRelationships(
         zip,
@@ -311,7 +544,7 @@ async function convertPptx(arrayBuffer) {
         "ppt/"
     );
 
-    const slideIds = presentationXml.getElementsByTagNameNS(
+    const slideIds = presentationDoc.getElementsByTagNameNS(
         PRESENTATION_NS,
         "sldId"
     );
@@ -330,19 +563,24 @@ async function convertPptx(arrayBuffer) {
             continue;
         }
 
-        const texts = await getSlideText(zip, slidePath);
-        const images = await getSlideImages(zip,slidePath);
+        const objects = await getSlideObjects(
+            zip,
+            slidePath
+        );
 
         slides.push({
-            texts,
-            images
+            objects
         });
+
     }
 
-    return slides;
+    return {
+        slides,
+        dimensions
+    };
 }
 
-function displaySlides(slides){
+function displaySlides(slides, dimensions){
     documentFrame.hidden = true;
     pptxPreview.hidden = false;
 
@@ -357,25 +595,49 @@ function displaySlides(slides){
 
         slideElement.appendChild(title);
 
-        const content = document.createElement("div");
-        content.className = "slide-content";
-        content.textContent = slide.texts.join("\n");
+        const canvas = document.createElement("div");
+        canvas.className = "slide-canvas";
 
-        slideElement.appendChild(content);
+        canvas.style.aspectRatio = 
+            `${dimensions.width} / ${dimensions.height}`;
 
-        const imageContainer = document.createElement("div");
-        imageContainer.className = "slide-images";
+        for(const object of slide.objects){
+            const element = document.createElement(
+                object.type === "image" ? "img" : "div"
+            );
 
-        for(const imageUrl of slide.images){
-            const image = document.createElement("img");
-            image.src = imageUrl;
-            image.alt = "スライド内の画像";
+            element.classList.add("slide-object");
 
-            imageContainer.appendChild(image);
+            element.style.left =
+                `${object.x / dimensions.width * 100}%`;
+
+            element.style.top =
+                `${object.y / dimensions.height * 100}%`;
+
+            element.style.width =
+                `${object.cx / dimensions.width * 100}%`;
+
+            element.style.height =
+                `${object.cy / dimensions.height * 100}%`;
+
+            if(object.type === "text"){
+                element.classList.add("slide-text");
+
+                element.textContent = object.text;
+
+                element.style.color = object.color;
+            } else{
+                element.src = object.src;
+                element.alt = "スライド内の画像";
+            }
+
+            canvas.appendChild(element);
+            
         }
 
-        slideElement.appendChild(imageContainer);
+        slideElement.appendChild(canvas);
         pptxPreview.appendChild(slideElement);
+        
     });
 }
 
@@ -397,7 +659,7 @@ async function loadFile(){
 
         const contentType = (
             response.headers.get("content-type") || ""
-        ).split(",")[0].trim().toLowerCase();
+        ).split(";")[0].trim().toLowerCase();
             
 
         const finalUrl = new URL(response.url);
@@ -437,18 +699,25 @@ async function loadFile(){
 
             status.textContent = "PowerPointを解析しています...";
 
-            const slides = await convertPptx(arrayBuffer);
+            const pptxData = await convertPptx(arrayBuffer);
+
+            const slides = pptxData.slides;
 
             if(slides.length === 0){
                 throw new Error("slide is missing...");
             }
 
-            displaySlides(slides);
+            displaySlides(
+                slides,
+                pptxData.dimensions
+            );
 
-            status.textContent = 
+            status.textContent =
                 `表示完了: ${filename} (${slides.length}枚)`;
 
             return;
+
+            
         } else if(isDocx){
 
             if(typeof mammoth === "undefined"){
