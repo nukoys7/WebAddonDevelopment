@@ -15,6 +15,10 @@ const fileUrl = params.get('url');
 const status = document.getElementById('status');
 const documentFrame = document.getElementById('documentFrame');
 const pptxPreview = document.getElementById("pptxPreview");
+const downloadButton = document.getElementById("downloadButton");
+
+let originalFile = null;
+let originalFilename = "document";
 // 
 // document.body.appendChild(status);
 
@@ -682,6 +686,14 @@ async function loadFile(){
             contentType ===
             "application/vnd.openxmlformats-officedocument.presentationml.presentation";
 
+        const isPdf =
+            lowerFilename.endsWith(".pdf") ||
+            contentType === "application/pdf";
+
+        if(isPdf){
+            throw new Error("PDFファイルはプレビュー対象外です.");
+        }
+
         console.log("取得ファイル名:", filename);
         console.log("取得MIMEタイプ:", contentType);
         console.log("DOCX判定:", isDocx);
@@ -689,6 +701,13 @@ async function loadFile(){
         console.log("PPTX:", isPptx);
 
         const arrayBuffer = await response.arrayBuffer();
+
+        originalFile = new Blob([arrayBuffer], {
+            type: contentType || "application/octet-stream"
+        });
+
+        originalFilename = filename;
+        downloadButton.disabled = false;
 
         let html;
 
@@ -835,5 +854,23 @@ async function loadFile(){
         
     }
 }
+
+downloadButton.addEventListener("click", () => {
+    if(!originalFile) return;
+
+    const downloadUrl = URL.createObjectURL(originalFile);
+
+    const link = document.createElement("a");
+    link.href = downloadUrl;
+    link.download = originalFilename;
+
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+
+    setTimeout(() => {
+        URL.revokeObjectURL(downloadUrl);
+    }, 1000);
+});
 
 loadFile();
