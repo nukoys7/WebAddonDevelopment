@@ -8,6 +8,10 @@ const supportedExtensions =[
     ".doc"
 ];
 
+const excludeExtentions = [
+    ".pdf"
+];
+
 document.addEventListener("click",(event)=> {
     const link = event.target.closest("a[href]");
 
@@ -19,10 +23,17 @@ document.addEventListener("click",(event)=> {
         fileUrl = new URL(link.href);
     }catch(error){
         console.error("URLの解析に失敗", error);
+        
         return;
     }
 
     const pathname = fileUrl.pathname.toLowerCase();
+
+    const isExcludeFile = excludeExtentions.some(
+            extention => pathname.endsWith(extention)
+        );
+
+    if(isExcludeFile) return;
 
     const isDirectFile = supportedExtensions.some(
         extension => pathname.endsWith(extension)
